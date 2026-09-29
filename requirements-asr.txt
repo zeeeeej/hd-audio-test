@@ -1,0 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cu118
+torch==2.7.1+cu118
+accelerate==1.12.0
+fastapi==0.117.1
+numpy==2.2.6
+peft==0.17.1
+python-multipart==0.0.20
+soundfile==0.13.1
+transformers==5.13.0
+uvicorn[standard]==0.36.0

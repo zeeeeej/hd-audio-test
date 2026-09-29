@@ -1,0 +1,1 @@
+"""Authenticated voice service gateway."""

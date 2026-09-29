@@ -1,0 +1,20 @@
+[Unit]
+Description=HD Voice API Gateway
+After=network-online.target voice-asr.service voice-tts.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/voice-stack/current
+Environment=PYTHONPATH=/data/voice-stack/current
+EnvironmentFile=/data/voice-stack/config/voice.env
+ExecStart=/data/miniconda3/envs/voice-app/bin/uvicorn src.voice_gateway.main:app --host 127.0.0.1 --port 18000 --workers 1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=voice-stack.target

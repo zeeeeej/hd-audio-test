@@ -1,0 +1,20 @@
+[Unit]
+Description=HD Voice Business Demo
+After=network-online.target voice-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/voice-stack/current
+Environment=PYTHONPATH=/data/voice-stack/current
+EnvironmentFile=/data/voice-stack/config/voice.env
+ExecStart=/data/miniconda3/envs/voice-app/bin/uvicorn src.business.main:app --host 0.0.0.0 --port 8443 --workers 1 --ssl-keyfile /data/voice-stack/config/tls/server.key --ssl-certfile /data/voice-stack/config/tls/server.crt
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=voice-stack.target

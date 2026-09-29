@@ -1,0 +1,7 @@
+[Unit]
+Description=HD Voice Stack
+Wants=voice-asr.service voice-tts.service voice-gateway.service voice-business.service
+After=voice-asr.service voice-tts.service voice-gateway.service voice-business.service
+
+[Install]
+WantedBy=multi-user.target

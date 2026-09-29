@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice 服务测试</title>
+  <style>
+    :root { color-scheme: light; font-family: Inter, system-ui, sans-serif; background: #f4f7fb; color: #172033; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 32px 16px; }
+    main { max-width: 960px; margin: 0 auto; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 44px); }
+    .sub { color: #657089; margin: 0 0 28px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+    section { background: white; border: 1px solid #dfe5ef; border-radius: 16px; padding: 22px; box-shadow: 0 8px 24px #1f35500d; }
+    h2 { margin-top: 0; font-size: 20px; }
+    label { display: block; margin: 14px 0 7px; font-size: 14px; font-weight: 650; }
+    textarea, select { width: 100%; border: 1px solid #cbd4e1; border-radius: 10px; padding: 11px; font: inherit; background: white; }
+    textarea { min-height: 106px; resize: vertical; }
+    button { border: 0; border-radius: 10px; padding: 11px 16px; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: .5; }
+    .primary { background: #2868e8; color: white; }
+    .danger { background: #e5484d; color: white; }
+    .secondary { background: #e8edf5; color: #172033; }
+    .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 14px; }
+    .status { min-height: 22px; margin: 14px 0 0; color: #59667d; font-size: 14px; }
+    .status.error { color: #c62f35; }
+    .result { margin-top: 13px; border-radius: 10px; background: #f2f6fc; min-height: 72px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    audio { width: 100%; margin-top: 14px; }
+    small { color: #78849a; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Voice 服务测试</h1>
+  <p class="sub">整段语音识别与文字转语音 · Qwen3-ASR/TTS 0.6B</p>
+  <div class="grid">
+    <section>
+      <h2>语音转文字</h2>
+      <small>点击录音，再点击停止；最长 60 秒。</small>
+      <label for="hotwords">饮料名称 / 热词（逗号或换行分隔）</label>
+      <textarea id="hotwords" placeholder="元气森林&#10;东方树叶&#10;Coca-Cola"></textarea>
+      <div class="actions">
+        <button class="primary" id="record">开始录音</button>
+        <button class="danger" id="stop" disabled>停止</button>
+        <button class="secondary" id="submit" disabled>提交识别</button>
+      </div>
+      <audio id="recording" controls hidden></audio>
+      <p class="status" id="asr-status"></p>
+      <div class="result" id="transcript">识别结果会显示在这里。</div>
+    </section>
+
+    <section>
+      <h2>文字转语音</h2>
+      <label for="tts-text">合成文本</label>
+      <textarea id="tts-text" maxlength="500" placeholder="请输入最多 500 字的内容。">欢迎使用语音服务，请问您想喝什么？</textarea>
+      <label for="voice">中文音色</label>
+      <select id="voice">
+        <option>Vivian</option><option>Serena</option><option>Uncle_Fu</option><option>Dylan</option><option>Eric</option>
+      </select>
+      <label for="instruct">语气指令（可选）</label>
+      <textarea id="instruct" maxlength="100" placeholder="例如：用热情、清晰的语气说"></textarea>
+      <div class="actions"><button class="primary" id="synthesize">生成音频</button></div>
+      <p class="status" id="tts-status"></p>
+      <audio id="speech" controls hidden></audio>
+      <div class="actions"><a id="download" hidden download="speech.wav">下载 WAV</a></div>
+    </section>
+  </div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let recorder, stream, chunks = [], recordingBlob = null, recordingUrl = null, speechUrl = null;
+
+  function setStatus(target, text, isError = false) {
+    target.textContent = text;
+    target.classList.toggle('error', isError);
+  }
+  async function errorMessage(response) {
+    try { const body = await response.json(); return body.error?.message || JSON.stringify(body); }
+    catch { return `${response.status} ${response.statusText}`; }
+  }
+  $('record').onclick = async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      const preferred = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+      recorder = new MediaRecorder(stream, preferred ? {mimeType: preferred} : undefined);
+      chunks = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder.onstop = () => {
+        recordingBlob = new Blob(chunks, {type: recorder.mimeType || 'audio/webm'});
+        if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+        recordingUrl = URL.createObjectURL(recordingBlob);
+        $('recording').src = recordingUrl;
+        $('recording').hidden = false;
+        $('submit').disabled = false;
+        stream.getTracks().forEach((track) => track.stop());
+        setStatus($('asr-status'), `录音完成，${(recordingBlob.size / 1024).toFixed(1)} KB。`);
+      };
+      recorder.start();
+      $('record').disabled = true; $('stop').disabled = false; $('submit').disabled = true;
+      setStatus($('asr-status'), '正在录音…');
+    } catch (error) { setStatus($('asr-status'), `无法使用麦克风：${error.message}`, true); }
+  };
+  $('stop').onclick = () => {
+    if (recorder?.state === 'recording') recorder.stop();
+    $('record').disabled = false; $('stop').disabled = true;
+  };
+  $('submit').onclick = async () => {
+    if (!recordingBlob) return;
+    $('submit').disabled = true;
+    setStatus($('asr-status'), '正在上传并识别…');
+    const words = $('hotwords').value.split(/[，,\n]/).map((s) => s.trim()).filter(Boolean);
+    const form = new FormData();
+    form.append('file', recordingBlob, 'recording.webm');
+    form.append('language', 'Chinese');
+    form.append('hotwords', JSON.stringify(words));
+    try {
+      const response = await fetch('/api/transcriptions', {method: 'POST', body: form});
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const body = await response.json();
+      $('transcript').textContent = body.text || '(未识别到文字)';
+      setStatus($('asr-status'), `识别完成 · ${body.inference_ms ?? '-'} ms · ${body.model}`);
+    } catch (error) { setStatus($('asr-status'), error.message, true); }
+    finally { $('submit').disabled = false; }
+  };
+  $('synthesize').onclick = async () => {
+    const input = $('tts-text').value.trim();
+    if (!input) { setStatus($('tts-status'), '请输入合成文本。', true); return; }
+    $('synthesize').disabled = true;
+    setStatus($('tts-status'), '正在生成音频…');
+    try {
+      const response = await fetch('/api/speech', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({input, voice: $('voice').value, language: 'Chinese', instruct: $('instruct').value.trim()})
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const blob = await response.blob();
+      if (speechUrl) URL.revokeObjectURL(speechUrl);
+      speechUrl = URL.createObjectURL(blob);
+      $('speech').src = speechUrl; $('speech').hidden = false;
+      $('download').href = speechUrl; $('download').hidden = false;
+      setStatus($('tts-status'), '生成完成。');
+      await $('speech').play().catch(() => {});
+    } catch (error) { setStatus($('tts-status'), error.message, true); }
+    finally { $('synthesize').disabled = false; }
+  };
+</script>
+</body>
+</html>

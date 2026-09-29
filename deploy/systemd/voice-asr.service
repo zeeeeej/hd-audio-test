@@ -1,0 +1,21 @@
+[Unit]
+Description=HD Voice Qwen3 ASR Worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/voice-stack/current
+Environment=PYTHONPATH=/data/voice-stack/current
+EnvironmentFile=/data/voice-stack/config/voice.env
+ExecStart=/data/miniconda3/envs/voice-asr/bin/uvicorn src.asr_worker.main:app --host 127.0.0.1 --port 18001 --workers 1
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=900
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=false
+LimitNOFILE=65536
+
+[Install]
+WantedBy=voice-stack.target

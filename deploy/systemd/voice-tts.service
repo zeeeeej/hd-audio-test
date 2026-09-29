@@ -1,0 +1,21 @@
+[Unit]
+Description=HD Voice Qwen3 TTS Worker
+After=network-online.target voice-asr.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/data/voice-stack/current
+Environment=PYTHONPATH=/data/voice-stack/current
+EnvironmentFile=/data/voice-stack/config/voice.env
+ExecStart=/data/miniconda3/envs/voice-tts/bin/uvicorn src.tts_worker.main:app --host 127.0.0.1 --port 18002 --workers 1
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=900
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=false
+LimitNOFILE=65536
+
+[Install]
+WantedBy=voice-stack.target
