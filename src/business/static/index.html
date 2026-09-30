@@ -28,12 +28,39 @@
     .result { margin-top: 13px; border-radius: 10px; background: #f2f6fc; min-height: 72px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
     audio { width: 100%; margin-top: 14px; }
     small { color: #78849a; }
+    .dialogue { margin-bottom: 24px; }
+    .dialogue-log { max-height: 420px; overflow-y: auto; }
+    .dialogue-log p { margin: 8px 0; padding: 10px 12px; border-radius: 8px; background: #f2f6fc; white-space: pre-wrap; }
+    .dialogue-log .customer { background: #edf7ed; }
+    details > summary { cursor: pointer; margin: 20px 0; font-weight: 650; }
+    [inert] { opacity: .55; }
   </style>
 </head>
 <body>
 <main>
-  <h1>Voice 服务测试</h1>
-  <p class="sub">整段语音识别 · 按句生成播放与整段文字转语音 · Qwen3-ASR/TTS 0.6B</p>
+  <h1>冰柜语音导购</h1>
+  <p class="sub">点击说话，帮您选饮料、查演示价格和库存。</p>
+  <section class="dialogue" aria-labelledby="dialogue-title">
+    <h2 id="dialogue-title">饮料导购 · 网页模拟</h2>
+    <small id="dialogue-notice">商品、价格、库存与购物规则均为演示数据。本页面不下单、不付款、不开柜。</small>
+    <p id="dialogue-limits">每次回答不超过 2 句，共 60 字；最多 6 轮，空闲 60 秒结束。</p>
+    <label for="dialogue-voice">导购音色</label>
+    <select id="dialogue-voice">
+      <option>Vivian</option><option>Serena</option><option>Uncle_Fu</option><option>Dylan</option><option>Eric</option>
+    </select>
+    <div class="actions">
+      <button class="primary" id="dialogue-record">开始对话并录音</button>
+      <button class="primary" id="dialogue-stop" disabled>停止录音并发送</button>
+      <button class="secondary" id="dialogue-resume" hidden>点击播放回答</button>
+      <button class="danger" id="dialogue-end" disabled>结束会话</button>
+    </div>
+    <p class="status" id="dialogue-status" role="status" aria-live="polite">点击按钮模拟物理触发。回答播放完后可继续说话。</p>
+    <p><small id="dialogue-turn">尚未开始</small></p>
+    <div id="dialogue-log" class="dialogue-log" role="log" aria-live="polite"></div>
+    <details><summary>本轮诊断</summary><small id="dialogue-metrics">尚无请求。</small></details>
+  </section>
+  <details id="voice-debug">
+  <summary>Voice 服务测试 · 独立 ASR / TTS 调试</summary>
   <div class="grid">
     <section>
       <h2>语音转文字</h2>
@@ -72,6 +99,7 @@
       <div class="actions"><a id="download" hidden download="speech.wav">下载 WAV</a></div>
     </section>
   </div>
+  </details>
 </main>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -311,5 +339,6 @@
     finally { $('synthesize').disabled = false; $('synthesize-whole').disabled = false; }
   };
 </script>
+<script src="/dialogue.js" defer></script>
 </body>
 </html>

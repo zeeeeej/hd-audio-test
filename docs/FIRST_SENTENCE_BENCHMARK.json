@@ -1,0 +1,421 @@
+{
+  "metadata": {
+    "baseline_sha256": "e9967766510810d6551dd726e89319efb000be0f6d4df395077630de9f7b2cf8",
+    "candidate_sha256": "d50a96bf79c76f85542f112ec8a949201e5c388b81cb254e16d17d56d1fcb0e8",
+    "method": "Same server, same recordings, same Vivian voice; alternate baseline/candidate; 3 samples per case per variant; candidate executed in memory without deployment.",
+    "cases": {
+      "price": "东方树叶多少钱？",
+      "stock": "还有几瓶？ (same seeded product context for both variants)"
+    },
+    "settings": {
+      "first_sentence_target_chars": 12,
+      "sentence_chars": 30,
+      "max_reply_chars": 60,
+      "max_sentences": 2
+    },
+    "timing_scope": "Server-side ASR request start through first audio event; excludes client upload and browser playback.",
+    "tests": {
+      "pytest_passed": 67,
+      "ruff": "passed"
+    },
+    "date": "2026-09-30",
+    "server": "GPU服务器151",
+    "semantic_cases_passed": 9,
+    "deployed_during_benchmark": false
+  },
+  "summary": {
+    "price": {
+      "before": {
+        "first_sentence_chars": 20,
+        "first_audio_ms": 11393,
+        "first_tts_ms": 9907,
+        "total_ms": 15946,
+        "sentence_count": 2
+      },
+      "after": {
+        "first_sentence_chars": 6,
+        "first_audio_ms": 6829,
+        "first_tts_ms": 5378,
+        "total_ms": 6830,
+        "sentence_count": 1
+      },
+      "first_audio_reduction_percent": 40.1
+    },
+    "stock": {
+      "before": {
+        "first_sentence_chars": 9,
+        "first_audio_ms": 6949,
+        "first_tts_ms": 5995,
+        "total_ms": 6950,
+        "sentence_count": 1
+      },
+      "after": {
+        "first_sentence_chars": 7,
+        "first_audio_ms": 6947,
+        "first_tts_ms": 5965,
+        "total_ms": 6948,
+        "sentence_count": 1
+      },
+      "first_audio_reduction_percent": 0.0
+    }
+  },
+  "interpretation": {
+    "price": "首段耗时中位数从11.393秒降到6.829秒，降低40.1%；第一句从20字缩短到6字。",
+    "stock": "首段耗时中位数6.949秒与6.947秒基本持平，2毫秒差异不代表实质改善；原回答已经较短。",
+    "limitations": "每场景每版本仅3次，TTS采样存在明显波动；未固定模型随机种子。结果不是延迟保证，不含用户上传和浏览器播放时间。",
+    "behavior": "9个模型场景人工核验通过；保留必要商品名和对应事实。12字为提示词目标，不是强制校验，也不能保证每次生成均符合所有风格要求。"
+  },
+  "samples": [
+    {
+      "type": "sample",
+      "case": "price",
+      "variant": "before",
+      "repeat": 1,
+      "request_id": "short-first-9491ce0d-f251-4d7d-8ce0-d9086b5b6317",
+      "asr_ms": 437,
+      "transcript": "东方树叶多少钱？",
+      "deepseek_ms": 1239,
+      "reply": "东方树叶茉莉花茶500毫升，演示价6元。库存演示为8瓶。",
+      "intent": "shopping",
+      "first_sentence": "东方树叶茉莉花茶500毫升，演示价6元。",
+      "first_sentence_chars": 20,
+      "sentence_count": 2,
+      "first_audio_ms": 11393,
+      "first_tts_ms": 9716,
+      "first_audio_seconds": 4.8,
+      "tts_ms": 14260,
+      "total_ms": 15937
+    },
+    {
+      "type": "sample",
+      "case": "price",
+      "variant": "after",
+      "repeat": 1,
+      "request_id": "short-first-bda25430-2ae4-4446-8b7e-6870cd90d8d0",
+      "asr_ms": 404,
+      "transcript": "东方树叶多少钱？",
+      "deepseek_ms": 627,
+      "reply": "演示价六元。",
+      "intent": "shopping",
+      "first_sentence": "演示价六元。",
+      "first_sentence_chars": 6,
+      "sentence_count": 1,
+      "first_audio_ms": 7691,
+      "first_tts_ms": 6660,
+      "first_audio_seconds": 3.28,
+      "tts_ms": 6661,
+      "total_ms": 7692
+    },
+    {
+      "type": "sample",
+      "case": "stock",
+      "variant": "before",
+      "repeat": 1,
+      "request_id": "short-first-7ab945e7-825e-4551-b683-19c320fcec26",
+      "asr_ms": 403,
+      "transcript": "还有几瓶。",
+      "deepseek_ms": 757,
+      "reply": "演示库存还有八瓶。",
+      "intent": "shopping",
+      "first_sentence": "演示库存还有八瓶。",
+      "first_sentence_chars": 9,
+      "sentence_count": 1,
+      "first_audio_ms": 7198,
+      "first_tts_ms": 6038,
+      "first_audio_seconds": 2.96,
+      "tts_ms": 6040,
+      "total_ms": 7200
+    },
+    {
+      "type": "sample",
+      "case": "stock",
+      "variant": "after",
+      "repeat": 1,
+      "request_id": "short-first-1e6ebc86-68fc-4725-95b7-feea0f2db6b0",
+      "asr_ms": 398,
+      "transcript": "还有几瓶。",
+      "deepseek_ms": 633,
+      "reply": "演示库存八瓶。",
+      "intent": "shopping",
+      "first_sentence": "演示库存八瓶。",
+      "first_sentence_chars": 7,
+      "sentence_count": 1,
+      "first_audio_ms": 6065,
+      "first_tts_ms": 5034,
+      "first_audio_seconds": 2.48,
+      "tts_ms": 5035,
+      "total_ms": 6066
+    },
+    {
+      "type": "sample",
+      "case": "price",
+      "variant": "after",
+      "repeat": 2,
+      "request_id": "short-first-aad07493-874a-4668-a730-683ebb9976e2",
+      "asr_ms": 405,
+      "transcript": "东方树叶多少钱？",
+      "deepseek_ms": 1046,
+      "reply": "演示价六元。",
+      "intent": "shopping",
+      "first_sentence": "演示价六元。",
+      "first_sentence_chars": 6,
+      "sentence_count": 1,
+      "first_audio_ms": 6829,
+      "first_tts_ms": 5378,
+      "first_audio_seconds": 2.64,
+      "tts_ms": 5379,
+      "total_ms": 6830
+    },
+    {
+      "type": "sample",
+      "case": "price",
+      "variant": "before",
+      "repeat": 2,
+      "request_id": "short-first-720e75a2-966b-4650-8a14-7e6d00d0497b",
+      "asr_ms": 403,
+      "transcript": "东方树叶多少钱？",
+      "deepseek_ms": 933,
+      "reply": "东方树叶茉莉花茶500毫升，演示价6元。库存8瓶，演示数据哦。",
+      "intent": "shopping",
+      "first_sentence": "东方树叶茉莉花茶500毫升，演示价6元。",
+      "first_sentence_chars": 20,
+      "sentence_count": 2,
+      "first_audio_ms": 13438,
+      "first_tts_ms": 12102,
+      "first_audio_seconds": 6.0,
+      "tts_ms": 19357,
+      "total_ms": 20693
+    },
+    {
+      "type": "sample",
+      "case": "stock",
+      "variant": "after",
+      "repeat": 2,
+      "request_id": "short-first-95283b6b-405b-4c8c-9c25-6301aae5c795",
+      "asr_ms": 397,
+      "transcript": "还有几瓶。",
+      "deepseek_ms": 731,
+      "reply": "演示库存八瓶。",
+      "intent": "shopping",
+      "first_sentence": "演示库存八瓶。",
+      "first_sentence_chars": 7,
+      "sentence_count": 1,
+      "first_audio_ms": 7319,
+      "first_tts_ms": 6191,
+      "first_audio_seconds": 3.04,
+      "tts_ms": 6192,
+      "total_ms": 7320
+    },
+    {
+      "type": "sample",
+      "case": "stock",
+      "variant": "before",
+      "repeat": 2,
+      "request_id": "short-first-7ad22b65-5815-49f7-b401-a29f3b50d08d",
+      "asr_ms": 396,
+      "transcript": "还有几瓶。",
+      "deepseek_ms": 559,
+      "reply": "演示库存还有八瓶。",
+      "intent": "shopping",
+      "first_sentence": "演示库存还有八瓶。",
+      "first_sentence_chars": 9,
+      "sentence_count": 1,
+      "first_audio_ms": 6949,
+      "first_tts_ms": 5995,
+      "first_audio_seconds": 2.96,
+      "tts_ms": 5996,
+      "total_ms": 6950
+    },
+    {
+      "type": "sample",
+      "case": "price",
+      "variant": "before",
+      "repeat": 3,
+      "request_id": "short-first-afc6900c-448e-4284-8aae-fd45233d7fc8",
+      "asr_ms": 401,
+      "transcript": "东方树叶多少钱？",
+      "deepseek_ms": 924,
+      "reply": "东方树叶茉莉花茶500毫升，演示价6元。库存演示为8瓶。",
+      "intent": "shopping",
+      "first_sentence": "东方树叶茉莉花茶500毫升，演示价6元。",
+      "first_sentence_chars": 20,
+      "sentence_count": 2,
+      "first_audio_ms": 11233,
+      "first_tts_ms": 9907,
+      "first_audio_seconds": 4.88,
+      "tts_ms": 14621,
+      "total_ms": 15946
+    },
+    {
+      "type": "sample",
+      "case": "price",
+      "variant": "after",
+      "repeat": 3,
+      "request_id": "short-first-540e2abe-955b-48b8-bd60-32f28b253ea6",
+      "asr_ms": 399,
+      "transcript": "东方树叶多少钱？",
+      "deepseek_ms": 717,
+      "reply": "演示价六元。",
+      "intent": "shopping",
+      "first_sentence": "演示价六元。",
+      "first_sentence_chars": 6,
+      "sentence_count": 1,
+      "first_audio_ms": 5536,
+      "first_tts_ms": 4419,
+      "first_audio_seconds": 2.16,
+      "tts_ms": 4420,
+      "total_ms": 5537
+    },
+    {
+      "type": "sample",
+      "case": "stock",
+      "variant": "before",
+      "repeat": 3,
+      "request_id": "short-first-ec8d0661-c382-4614-8587-b05d842abb02",
+      "asr_ms": 394,
+      "transcript": "还有几瓶。",
+      "deepseek_ms": 488,
+      "reply": "演示库存还有八瓶。",
+      "intent": "shopping",
+      "first_sentence": "演示库存还有八瓶。",
+      "first_sentence_chars": 9,
+      "sentence_count": 1,
+      "first_audio_ms": 6426,
+      "first_tts_ms": 5543,
+      "first_audio_seconds": 2.72,
+      "tts_ms": 5544,
+      "total_ms": 6427
+    },
+    {
+      "type": "sample",
+      "case": "stock",
+      "variant": "after",
+      "repeat": 3,
+      "request_id": "short-first-7c494a41-a805-4534-8ce2-35e52ef83a38",
+      "asr_ms": 397,
+      "transcript": "还有几瓶。",
+      "deepseek_ms": 585,
+      "reply": "演示库存八瓶。",
+      "intent": "shopping",
+      "first_sentence": "演示库存八瓶。",
+      "first_sentence_chars": 7,
+      "sentence_count": 1,
+      "first_audio_ms": 6947,
+      "first_tts_ms": 5965,
+      "first_audio_seconds": 2.96,
+      "tts_ms": 5967,
+      "total_ms": 6948
+    }
+  ],
+  "reply_evaluation": [
+    {
+      "case": "different_price",
+      "question": "冰露饮用水多少钱？",
+      "intent": "shopping",
+      "reply": "演示价两元。",
+      "ms": 936
+    },
+    {
+      "case": "different_stock",
+      "question": "元气森林白桃味气泡水还有几瓶？",
+      "intent": "shopping",
+      "reply": "演示库存六瓶。",
+      "ms": 733
+    },
+    {
+      "case": "long_product",
+      "question": "推荐白桃味无糖气泡水。",
+      "intent": "shopping",
+      "reply": "推荐元气森林白桃味气泡水。",
+      "ms": 672
+    },
+    {
+      "case": "comparison",
+      "question": "东方树叶和冰露哪个便宜？",
+      "intent": "shopping",
+      "reply": "冰露饮用水更便宜。演示价冰露两元，东方树叶六元。",
+      "ms": 757
+    },
+    {
+      "case": "multiple_questions",
+      "question": "东方树叶多少钱，还有几瓶？",
+      "intent": "shopping",
+      "reply": "演示价六元。演示库存八瓶。",
+      "ms": 639
+    },
+    {
+      "case": "unknown_product",
+      "question": "草莓牛奶多少钱？",
+      "intent": "insufficient",
+      "reply": "没有这款的资料。",
+      "ms": 462
+    },
+    {
+      "case": "ambiguous",
+      "question": "这个多少钱？",
+      "intent": "insufficient",
+      "reply": "请问是哪款饮料？",
+      "ms": 545
+    },
+    {
+      "case": "out_of_stock",
+      "question": "可口可乐有货吗？",
+      "intent": "shopping",
+      "reply": "演示库存零瓶。",
+      "ms": 477
+    },
+    {
+      "case": "unrelated",
+      "question": "帮我写一个Python排序程序。",
+      "intent": "unrelated",
+      "reply": "我可以帮您选饮料。请说说您的购物需求。",
+      "ms": 662
+    }
+  ],
+  "reproduction": {
+    "benchmark_script": "/Users/xiangpengle/Documents/tmp/hd-audio-short-first-20260930-141824/benchmark.py",
+    "reply_evaluation_script": "/Users/xiangpengle/Documents/tmp/hd-audio-short-first-20260930-141824/evaluate_replies.py"
+  },
+  "deployment": {
+    "date": "2026-09-30",
+    "status": "deployed_and_verified",
+    "server": "GPU服务器151",
+    "updated_file": "/data/voice-stack/current/src/business/retail.py",
+    "sha256": "d50a96bf79c76f85542f112ec8a949201e5c388b81cb254e16d17d56d1fcb0e8",
+    "backup_directory": "/data/voice-stack/backups/20260930-short-first-sentence",
+    "restarted_service": "voice-business",
+    "verification": [
+      {
+        "type": "passed",
+        "turn": 1,
+        "audio_count": 1,
+        "transcript": "东方树叶多少钱？",
+        "reply": "演示价六元。",
+        "intent": "shopping",
+        "timings": {
+          "asr_ms": 415,
+          "deepseek_ms": 714,
+          "first_audio_ms": 5652,
+          "tts_ms": 4524,
+          "total_ms": 5654
+        }
+      },
+      {
+        "type": "passed",
+        "turn": 2,
+        "audio_count": 1,
+        "transcript": "还有几瓶。",
+        "reply": "演示库存八瓶。",
+        "intent": "shopping",
+        "timings": {
+          "asr_ms": 404,
+          "deepseek_ms": 747,
+          "first_audio_ms": 6027,
+          "tts_ms": 4879,
+          "total_ms": 6029
+        }
+      }
+    ],
+    "service_status": "All four voice services active"
+  }
+}

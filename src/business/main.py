@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -13,6 +14,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
+from src.business.dialogue import router as dialogue_router
 from src.common import (
     CHINESE_VOICES,
     MAX_TTS_CHARS,
@@ -29,9 +31,11 @@ VOICE_API_TOKEN = os.getenv("VOICE_API_TOKEN", "")
 VOICE_TIMEOUT_SECONDS = float(os.getenv("VOICE_TIMEOUT_SECONDS", "120"))
 DEFAULT_HOTWORDS_RAW = os.getenv("DEFAULT_HOTWORDS", "[]")
 STATIC_DIR = Path(__file__).with_name("static")
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
 app = FastAPI(title="HD Voice Business Demo", version="0.1.0")
 app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.include_router(dialogue_router)
 
 
 class SpeechRequest(BaseModel):
@@ -59,6 +63,11 @@ def _combined_hotwords(raw: str) -> list[str]:
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/dialogue.js", include_in_schema=False)
+async def dialogue_script() -> FileResponse:
+    return FileResponse(STATIC_DIR / "dialogue.js", media_type="application/javascript")
 
 
 @app.get("/api/voices")

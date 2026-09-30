@@ -1,0 +1,207 @@
+{
+  "date": "2026-09-30",
+  "metadata": {
+    "before_sha256": "d50a96bf79c76f85542f112ec8a949201e5c388b81cb254e16d17d56d1fcb0e8",
+    "candidate_sha256": "9002fed98120b155dbcc4a70e8b6902b6c428481e7f774bbe57ec7d0057cc737",
+    "pytest_passed": 70,
+    "ruff": "passed",
+    "deployed": true
+  },
+  "requested_behavior": "首句尽量12字，先回答完整有效的信息点，其余必要信息放第二句，整体含义不变。",
+  "review": "10条真实模型回答已核对；多商品列举3次首句均为8字；长商品名保持完整；第二种商品追问对应准确。",
+  "limitations": "这是提示词约束，12字是优先目标；单次评估不保证模型今后每次均遵守。未改动服务端硬性长度校验或TTS实现。",
+  "cases": [
+    {
+      "case": "other_drinks_1",
+      "question": "有没有其他饮料？",
+      "intent": "shopping",
+      "reply": "还有冰露饮用水。也有元气森林白桃味气泡水。",
+      "sentences": [
+        "还有冰露饮用水。",
+        "也有元气森林白桃味气泡水。"
+      ],
+      "first_sentence_chars": 8,
+      "ms": 430
+    },
+    {
+      "case": "other_drinks_2",
+      "question": "有没有其他饮料？",
+      "intent": "shopping",
+      "reply": "还有冰露饮用水。也有元气森林白桃味气泡水。",
+      "sentences": [
+        "还有冰露饮用水。",
+        "也有元气森林白桃味气泡水。"
+      ],
+      "first_sentence_chars": 8,
+      "ms": 508
+    },
+    {
+      "case": "other_drinks_3",
+      "question": "有没有其他饮料？",
+      "intent": "shopping",
+      "reply": "还有冰露饮用水。也有元气森林白桃味气泡水。",
+      "sentences": [
+        "还有冰露饮用水。",
+        "也有元气森林白桃味气泡水。"
+      ],
+      "first_sentence_chars": 8,
+      "ms": 520
+    },
+    {
+      "case": "available_drinks",
+      "question": "现在有哪些饮料有货？",
+      "intent": "shopping",
+      "reply": "有冰露饮用水。还有东方树叶茉莉花茶和元气森林白桃味气泡水。",
+      "sentences": [
+        "有冰露饮用水。",
+        "还有东方树叶茉莉花茶和元气森林白桃味气泡水。"
+      ],
+      "first_sentence_chars": 7,
+      "ms": 605
+    },
+    {
+      "case": "price_and_stock",
+      "question": "东方树叶多少钱，还有几瓶？",
+      "intent": "shopping",
+      "reply": "演示价六元。演示库存八瓶。",
+      "sentences": [
+        "演示价六元。",
+        "演示库存八瓶。"
+      ],
+      "first_sentence_chars": 6,
+      "ms": 791
+    },
+    {
+      "case": "comparison",
+      "question": "冰露和东方树叶分别多少钱？",
+      "intent": "shopping",
+      "reply": "冰露饮用水演示价两元。东方树叶茉莉花茶演示价六元。",
+      "sentences": [
+        "冰露饮用水演示价两元。",
+        "东方树叶茉莉花茶演示价六元。"
+      ],
+      "first_sentence_chars": 11,
+      "ms": 609
+    },
+    {
+      "case": "long_product",
+      "question": "推荐白桃味无糖气泡水。",
+      "intent": "shopping",
+      "reply": "推荐元气森林白桃味气泡水。",
+      "sentences": [
+        "推荐元气森林白桃味气泡水。"
+      ],
+      "first_sentence_chars": 13,
+      "ms": 443
+    },
+    {
+      "case": "no_action",
+      "question": "你能帮我开柜并付款吗？",
+      "intent": "shopping",
+      "reply": "本演示不能开柜或付款。请按冰柜现场屏幕和价签操作。",
+      "sentences": [
+        "本演示不能开柜或付款。",
+        "请按冰柜现场屏幕和价签操作。"
+      ],
+      "first_sentence_chars": 11,
+      "ms": 583
+    },
+    {
+      "case": "missing_data",
+      "question": "草莓牛奶多少钱？",
+      "intent": "insufficient",
+      "reply": "没有这款的资料。",
+      "sentences": [
+        "没有这款的资料。"
+      ],
+      "first_sentence_chars": 8,
+      "ms": 590
+    },
+    {
+      "case": "second_product_followup",
+      "question": "第二种多少钱？",
+      "intent": "shopping",
+      "reply": "演示价五元。"
+    }
+  ],
+  "deployment": {
+    "date": "2026-09-30",
+    "status": "deployed_and_verified",
+    "server": "GPU服务器151",
+    "updated_file": "/data/voice-stack/current/src/business/retail.py",
+    "sha256": "9002fed98120b155dbcc4a70e8b6902b6c428481e7f774bbe57ec7d0057cc737",
+    "backup_directory": "/data/voice-stack/backups/20260930-semantic-first-sentence",
+    "restarted_service": "voice-business",
+    "verification": [
+      {
+        "type": "passed",
+        "turn": 1,
+        "audio": [
+          {
+            "index": 0,
+            "text": "演示价六元。",
+            "seconds": 2.08
+          }
+        ],
+        "transcript": "东方树叶多少钱？",
+        "reply": "演示价六元。",
+        "intent": "shopping",
+        "timings": {
+          "asr_ms": 415,
+          "deepseek_ms": 650,
+          "first_audio_ms": 5284,
+          "tts_ms": 4219,
+          "total_ms": 5286
+        }
+      },
+      {
+        "type": "passed",
+        "turn": 2,
+        "audio": [
+          {
+            "index": 0,
+            "text": "还有冰露饮用水。",
+            "seconds": 2.08
+          },
+          {
+            "index": 1,
+            "text": "也有元气森林白桃味气泡水。",
+            "seconds": 4.48
+          }
+        ],
+        "transcript": "有没有其他饮料？",
+        "reply": "还有冰露饮用水。也有元气森林白桃味气泡水。",
+        "intent": "shopping",
+        "timings": {
+          "asr_ms": 408,
+          "deepseek_ms": 566,
+          "first_audio_ms": 5247,
+          "tts_ms": 13280,
+          "total_ms": 14254
+        }
+      },
+      {
+        "type": "passed",
+        "turn": 3,
+        "audio": [
+          {
+            "index": 0,
+            "text": "演示价五元。",
+            "seconds": 2.24
+          }
+        ],
+        "transcript": "第二种多少钱？",
+        "reply": "演示价五元。",
+        "intent": "shopping",
+        "timings": {
+          "asr_ms": 374,
+          "deepseek_ms": 718,
+          "first_audio_ms": 5679,
+          "tts_ms": 4588,
+          "total_ms": 5680
+        }
+      }
+    ],
+    "service_status": "All four voice services active"
+  }
+}
