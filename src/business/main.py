@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Form, Header, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.background import BackgroundTask
 
 from src.common import (
     CHINESE_VOICES,
@@ -153,3 +156,79 @@ async def speech(
         return error_response(504, "voice_timeout", "voice service timed out", req_id)
     except httpx.HTTPError:
         return error_response(502, "voice_unavailable", "voice service is unavailable", req_id)
+
+
+def _stream_error_line(code: str, message: str, req_id: str) -> bytes:
+    event = {
+        "type": "error",
+        "error": {"code": code, "message": message, "request_id": req_id},
+    }
+    return (json.dumps(event, separators=(",", ":")) + "\n").encode()
+
+
+@app.post("/api/speech/stream")
+async def speech_stream(
+    payload: SpeechRequest,
+    x_request_id: str | None = Header(default=None),
+) -> Response:
+    req_id = request_id(x_request_id)
+    if payload.voice not in CHINESE_VOICES:
+        return error_response(422, "invalid_voice", "unsupported Chinese voice", req_id)
+
+    stack = AsyncExitStack()
+    await stack.__aenter__()
+    try:
+        client = await stack.enter_async_context(
+            httpx.AsyncClient(timeout=VOICE_TIMEOUT_SECONDS)
+        )
+        upstream = await stack.enter_async_context(
+            client.stream(
+                "POST",
+                f"{VOICE_BASE_URL}/v1/audio/speech/stream",
+                headers=_auth_headers(req_id),
+                json=payload.model_dump(),
+            )
+        )
+    except httpx.TimeoutException:
+        await stack.aclose()
+        return error_response(504, "voice_timeout", "voice service timed out", req_id)
+    except httpx.HTTPError:
+        await stack.aclose()
+        return error_response(502, "voice_unavailable", "voice service is unavailable", req_id)
+
+    response_headers = {
+        "X-Request-ID": upstream.headers.get("x-request-id", req_id),
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    if upstream.status_code >= 400:
+        content = await upstream.aread()
+        media_type = upstream.headers.get("content-type", "application/json")
+        await stack.aclose()
+        return Response(
+            content=content,
+            status_code=upstream.status_code,
+            media_type=media_type,
+            headers={"X-Request-ID": response_headers["X-Request-ID"]},
+        )
+
+    async def body_iterator() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        except httpx.TimeoutException:
+            yield _stream_error_line("voice_timeout", "voice service timed out", req_id)
+        except httpx.HTTPError:
+            yield _stream_error_line(
+                "voice_unavailable", "voice service is unavailable", req_id
+            )
+        finally:
+            await stack.aclose()
+
+    return StreamingResponse(
+        body_iterator(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/x-ndjson"),
+        headers=response_headers,
+        background=BackgroundTask(stack.aclose),
+    )

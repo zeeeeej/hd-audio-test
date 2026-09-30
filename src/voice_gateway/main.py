@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
-from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
+from starlette.background import BackgroundTask
 
 from src.common import MAX_UPLOAD_BYTES, error_response, request_id
 
@@ -87,6 +90,94 @@ async def _proxy(request: Request, target: str, req_id: str) -> Response:
         return error_response(502, "worker_unavailable", "model worker is unavailable", req_id)
 
 
+def _stream_error_line(code: str, message: str, req_id: str) -> bytes:
+    event = {
+        "type": "error",
+        "error": {"code": code, "message": message, "request_id": req_id},
+    }
+    return (json.dumps(event, separators=(",", ":")) + "\n").encode()
+
+
+async def _stream_proxy(request: Request, target: str, req_id: str) -> Response:
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_UPLOAD_BYTES + 65536:
+                return error_response(413, "request_too_large", "request exceeds size limit", req_id)
+        except ValueError:
+            return error_response(400, "invalid_content_length", "invalid Content-Length header", req_id)
+    body = await request.body()
+    if len(body) > MAX_UPLOAD_BYTES + 65536:
+        return error_response(413, "request_too_large", "request exceeds size limit", req_id)
+
+    stack = AsyncExitStack()
+    await stack.__aenter__()
+    try:
+        await stack.enter_async_context(_gpu_slot())
+        client = await stack.enter_async_context(httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT))
+        upstream = await stack.enter_async_context(
+            client.stream(
+                request.method,
+                target,
+                content=body,
+                headers={
+                    "Content-Type": request.headers.get(
+                        "content-type", "application/octet-stream"
+                    ),
+                    "X-Request-ID": req_id,
+                },
+            )
+        )
+    except RuntimeError as exc:
+        await stack.aclose()
+        if str(exc) == "queue_full":
+            return error_response(503, "queue_full", "voice queue is full", req_id)
+        raise
+    except httpx.TimeoutException:
+        await stack.aclose()
+        return error_response(504, "worker_timeout", "model worker timed out", req_id)
+    except httpx.HTTPError:
+        await stack.aclose()
+        return error_response(502, "worker_unavailable", "model worker is unavailable", req_id)
+
+    response_headers = {
+        "X-Request-ID": upstream.headers.get("x-request-id", req_id),
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    if upstream.status_code >= 400:
+        content = await upstream.aread()
+        media_type = upstream.headers.get("content-type", "application/json")
+        await stack.aclose()
+        return Response(
+            content=content,
+            status_code=upstream.status_code,
+            media_type=media_type,
+            headers={"X-Request-ID": response_headers["X-Request-ID"]},
+        )
+
+    async def body_iterator() -> AsyncIterator[bytes]:
+        try:
+            async for chunk in upstream.aiter_raw():
+                yield chunk
+        except httpx.TimeoutException:
+            yield _stream_error_line("worker_timeout", "model worker timed out", req_id)
+        except httpx.HTTPError:
+            yield _stream_error_line(
+                "worker_unavailable", "model worker is unavailable", req_id
+            )
+        finally:
+            await stack.aclose()
+
+    return StreamingResponse(
+        body_iterator(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/x-ndjson"),
+        headers=response_headers,
+        background=BackgroundTask(stack.aclose),
+    )
+
+
 @app.get("/health/live")
 async def live() -> dict[str, str]:
     return {"status": "ok"}
@@ -129,3 +220,15 @@ async def speech(
     if not _authorized(authorization):
         return error_response(401, "unauthorized", "invalid voice API token", req_id)
     return await _proxy(request, f"{TTS_URL}/speech", req_id)
+
+
+@app.post("/v1/audio/speech/stream")
+async def speech_stream(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    x_request_id: str | None = Header(default=None),
+) -> Response:
+    req_id = request_id(x_request_id)
+    if not _authorized(authorization):
+        return error_response(401, "unauthorized", "invalid voice API token", req_id)
+    return await _stream_proxy(request, f"{TTS_URL}/speech/stream", req_id)

@@ -14,6 +14,10 @@ MAX_AUDIO_SECONDS = int(os.getenv("MAX_AUDIO_SECONDS", "60"))
 MAX_HOTWORDS = int(os.getenv("MAX_HOTWORDS", "100"))
 MAX_HOTWORD_LENGTH = int(os.getenv("MAX_HOTWORD_LENGTH", "40"))
 MAX_TTS_CHARS = int(os.getenv("MAX_TTS_CHARS", "500"))
+TTS_STREAM_MAX_SENTENCE_CHARS = int(os.getenv("TTS_STREAM_MAX_SENTENCE_CHARS", "60"))
+
+if not 20 <= TTS_STREAM_MAX_SENTENCE_CHARS <= 200:
+    raise ValueError("TTS_STREAM_MAX_SENTENCE_CHARS must be between 20 and 200")
 
 CHINESE_VOICES = ("Vivian", "Serena", "Uncle_Fu", "Dylan", "Eric")
 ALLOWED_AUDIO_TYPES = {
@@ -80,6 +84,71 @@ def hotword_prompt(words: list[str]) -> str | None:
     if not words:
         return None
     return f"Vocabulary: {', '.join(words)}."
+
+
+def split_tts_sentences(
+    text: str,
+    max_chars: int = TTS_STREAM_MAX_SENTENCE_CHARS,
+) -> list[str]:
+    """Split TTS input into ordered, speakable chunks while preserving punctuation."""
+    if not 1 <= max_chars <= MAX_TTS_CHARS:
+        raise ValueError(f"max_chars must be between 1 and {MAX_TTS_CHARS}")
+
+    normalized = text.strip()
+    if not normalized:
+        return []
+
+    terminal_marks = set("。！？!?；;…\n")
+    secondary_marks = set("，,、：:")
+    logical_sentences: list[str] = []
+    start = 0
+    index = 0
+
+    while index < len(normalized):
+        character = normalized[index]
+        is_terminal = character in terminal_marks
+        if character == ".":
+            previous = normalized[index - 1] if index else ""
+            following = normalized[index + 1] if index + 1 < len(normalized) else ""
+            is_decimal = previous.isdigit() and following.isdigit()
+            is_terminal = not is_decimal and (not following or following.isspace())
+
+        if is_terminal:
+            end = index + 1
+            if character != "\n":
+                while end < len(normalized) and normalized[end] in terminal_marks - {"\n"}:
+                    end += 1
+            sentence = normalized[start:end].strip()
+            if sentence:
+                logical_sentences.append(sentence)
+            start = end
+            index = end
+            continue
+        index += 1
+
+    remainder = normalized[start:].strip()
+    if remainder:
+        logical_sentences.append(remainder)
+
+    chunks: list[str] = []
+    for sentence in logical_sentences:
+        remaining = sentence
+        while len(remaining) > max_chars:
+            window = remaining[:max_chars]
+            candidates = [
+                position + 1
+                for position, character in enumerate(window)
+                if character in secondary_marks or character.isspace()
+            ]
+            useful_candidates = [position for position in candidates if position >= max_chars // 2]
+            split_at = useful_candidates[-1] if useful_candidates else max_chars
+            chunk = remaining[:split_at].strip()
+            if chunk:
+                chunks.append(chunk)
+            remaining = remaining[split_at:].strip()
+        if remaining:
+            chunks.append(remaining)
+    return chunks
 
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:

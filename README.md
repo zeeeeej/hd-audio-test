@@ -6,7 +6,8 @@
 - TTS：`Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice`，支持五种中文音色。
 - Tesla T4 上 TTS 默认使用 FP32，避免该卡不支持原生 BF16、FP16 采样可能产生 NaN；可通过 `TTS_DTYPE` 调整。
 - 浏览器只访问业务服务；业务服务通过带 Bearer Token 的 voice gateway 调用模型 worker。
-- 首版为整段上传/整段返回，限制 60 秒录音、20MB 上传和 500 字 TTS 文本。
+- ASR 为整段上传/整段返回；TTS 同时支持整段 WAV 和按句生成、按句播放的伪流式响应。
+- 限制 60 秒录音、20MB 上传和 500 字 TTS 文本；伪流式默认每段最多 60 字。
 
 ## 进程与端口
 
@@ -55,6 +56,20 @@ curl -H "Authorization: Bearer $VOICE_API_TOKEN" \
   -d '{"input":"欢迎使用语音服务","voice":"Vivian","language":"Chinese","instruct":""}' \
   http://127.0.0.1:18000/v1/audio/speech -o speech.wav
 ```
+
+按句伪流式语音合成：
+
+```bash
+curl --no-buffer \
+  -H "Authorization: Bearer $VOICE_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"欢迎使用语音服务。请问您想喝什么？","voice":"Vivian","language":"Chinese","instruct":""}' \
+  http://127.0.0.1:18000/v1/audio/speech/stream
+```
+
+流式接口返回 `application/x-ndjson`。事件依次为 `start`、一个或多个 `audio`、`done`；
+每个 `audio` 事件携带一条独立 WAV 的 Base64 内容。流开始后的推理错误以 `error` 事件返回。
+`TTS_STREAM_MAX_SENTENCE_CHARS` 控制无自然句末时的最大分段长度，范围为 20–200。
 
 ## 微调数据
 

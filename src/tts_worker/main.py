@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import io
+import json
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import anyio
-import soundfile as sf
 from fastapi import FastAPI, Header
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.common import (
@@ -19,6 +22,7 @@ from src.common import (
     MAX_TTS_CHARS,
     error_response,
     request_id,
+    split_tts_sentences,
     validation_error_handler,
 )
 
@@ -66,23 +70,40 @@ class TTSRuntime:
         self.error = None
         logger.info("TTS model ready")
 
-    def synthesize(self, payload: SpeechRequest) -> bytes:
+    def synthesize_text(
+        self,
+        text: str,
+        voice: str,
+        language: str,
+        instruct: str,
+    ) -> tuple[bytes, int]:
         if self.model is None:
             raise RuntimeError("TTS model is not loaded")
+        import soundfile as sf
+
         kwargs: dict[str, object] = {
-            "text": payload.input,
-            "language": payload.language,
-            "speaker": payload.voice,
+            "text": text,
+            "language": language,
+            "speaker": voice,
         }
-        if payload.instruct:
-            kwargs["instruct"] = payload.instruct
+        if instruct:
+            kwargs["instruct"] = instruct
         wavs, sample_rate = self.model.generate_custom_voice(**kwargs)
         buffer = io.BytesIO()
         sf.write(buffer, wavs[0], sample_rate, format="WAV", subtype="PCM_16")
-        return buffer.getvalue()
+        return buffer.getvalue(), int(sample_rate)
+
+    def synthesize(self, payload: SpeechRequest) -> tuple[bytes, int]:
+        return self.synthesize_text(
+            payload.input,
+            payload.voice,
+            payload.language,
+            payload.instruct,
+        )
 
 
 runtime = TTSRuntime()
+_generation_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -99,6 +120,83 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="HD Qwen3 TTS Worker", version="0.1.0", lifespan=lifespan)
 app.add_exception_handler(RequestValidationError, validation_error_handler)
+
+
+def _event_line(event: dict[str, object]) -> bytes:
+    return (json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+
+
+async def _speech_events(
+    payload: SpeechRequest,
+    req_id: str,
+) -> AsyncIterator[bytes]:
+    sentences = split_tts_sentences(payload.input)
+    total_inference_ms = 0
+    yield _event_line(
+        {
+            "type": "start",
+            "request_id": req_id,
+            "sentence_count": len(sentences),
+        }
+    )
+
+    for index, sentence in enumerate(sentences):
+        started = time.perf_counter()
+        try:
+            async with _generation_lock:
+                audio, sample_rate = await anyio.to_thread.run_sync(
+                    runtime.synthesize_text,
+                    sentence,
+                    payload.voice,
+                    payload.language,
+                    payload.instruct,
+                )
+        except Exception:
+            logger.exception(
+                "streaming TTS failed request_id=%s sentence_index=%d",
+                req_id,
+                index,
+            )
+            yield _event_line(
+                {
+                    "type": "error",
+                    "index": index,
+                    "error": {
+                        "code": "tts_failed",
+                        "message": "speech synthesis failed",
+                        "request_id": req_id,
+                    },
+                }
+            )
+            return
+
+        inference_ms = round((time.perf_counter() - started) * 1000)
+        total_inference_ms += inference_ms
+        logger.info(
+            "TTS sentence complete request_id=%s sentence_index=%d inference_ms=%d",
+            req_id,
+            index,
+            inference_ms,
+        )
+        yield _event_line(
+            {
+                "type": "audio",
+                "index": index,
+                "text": sentence,
+                "media_type": "audio/wav",
+                "sample_rate": sample_rate,
+                "inference_ms": inference_ms,
+                "audio_base64": base64.b64encode(audio).decode("ascii"),
+            }
+        )
+
+    yield _event_line(
+        {
+            "type": "done",
+            "sentence_count": len(sentences),
+            "total_inference_ms": total_inference_ms,
+        }
+    )
 
 
 @app.get("/health/live")
@@ -125,7 +223,8 @@ async def speech(
     if payload.voice not in CHINESE_VOICES:
         return error_response(422, "invalid_voice", "unsupported Chinese voice", req_id)
     try:
-        audio = await anyio.to_thread.run_sync(runtime.synthesize, payload)
+        async with _generation_lock:
+            audio, _ = await anyio.to_thread.run_sync(runtime.synthesize, payload)
     except Exception:
         logger.exception("TTS inference failed request_id=%s", req_id)
         return error_response(500, "tts_failed", "speech synthesis failed", req_id)
@@ -139,5 +238,26 @@ async def speech(
             "X-Inference-MS": str(elapsed),
             "X-Model": Path(MODEL_ID).name,
             "Content-Disposition": 'inline; filename="speech.wav"',
+        },
+    )
+
+
+@app.post("/speech/stream")
+async def speech_stream(
+    payload: SpeechRequest,
+    x_request_id: str | None = Header(default=None),
+) -> Response:
+    req_id = request_id(x_request_id)
+    if runtime.model is None:
+        return error_response(503, "model_not_ready", "TTS model is not ready", req_id)
+    if payload.voice not in CHINESE_VOICES:
+        return error_response(422, "invalid_voice", "unsupported Chinese voice", req_id)
+    return StreamingResponse(
+        _speech_events(payload, req_id),
+        media_type="application/x-ndjson; charset=utf-8",
+        headers={
+            "X-Request-ID": req_id,
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
         },
     )

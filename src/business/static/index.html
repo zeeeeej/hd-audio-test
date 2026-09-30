@@ -33,7 +33,7 @@
 <body>
 <main>
   <h1>Voice 服务测试</h1>
-  <p class="sub">整段语音识别与文字转语音 · Qwen3-ASR/TTS 0.6B</p>
+  <p class="sub">整段语音识别 · 按句生成播放与整段文字转语音 · Qwen3-ASR/TTS 0.6B</p>
   <div class="grid">
     <section>
       <h2>语音转文字</h2>
@@ -60,8 +60,14 @@
       </select>
       <label for="instruct">语气指令（可选）</label>
       <textarea id="instruct" maxlength="100" placeholder="例如：用热情、清晰的语气说"></textarea>
-      <div class="actions"><button class="primary" id="synthesize">生成音频</button></div>
+      <div class="actions">
+        <button class="primary" id="synthesize">按句生成并播放</button>
+        <button class="danger" id="stop-speech" disabled>停止</button>
+        <button class="secondary" id="replay-speech" disabled>重播已生成</button>
+        <button class="secondary" id="synthesize-whole">生成整段 WAV</button>
+      </div>
       <p class="status" id="tts-status"></p>
+      <div class="result" id="stream-result" hidden></div>
       <audio id="speech" controls hidden></audio>
       <div class="actions"><a id="download" hidden download="speech.wav">下载 WAV</a></div>
     </section>
@@ -70,6 +76,10 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let recorder, stream, chunks = [], recordingBlob = null, recordingUrl = null, speechUrl = null;
+  let audioContext = null, ttsAbortController = null, nextPlaybackTime = 0, ttsRun = 0;
+  let streamFinished = false, playedSentences = 0;
+  const scheduledSources = new Set();
+  let streamedBuffers = [];
 
   function setStatus(target, text, isError = false) {
     target.textContent = text;
@@ -78,6 +88,58 @@
   async function errorMessage(response) {
     try { const body = await response.json(); return body.error?.message || JSON.stringify(body); }
     catch { return `${response.status} ${response.statusText}`; }
+  }
+  async function ensureAudioContext() {
+    if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === 'suspended') await audioContext.resume();
+    return audioContext;
+  }
+  function base64ToArrayBuffer(value) {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes.buffer;
+  }
+  function stopStreamAudio(abortRequest = true) {
+    if (abortRequest && ttsAbortController) ttsAbortController.abort();
+    ttsAbortController = null;
+    scheduledSources.forEach((source) => {
+      source.onended = null;
+      try { source.stop(); } catch {}
+    });
+    scheduledSources.clear();
+    nextPlaybackTime = 0;
+    $('stop-speech').disabled = true;
+  }
+  function scheduleBuffer(item, run) {
+    if (run !== ttsRun || !audioContext) return;
+    const source = audioContext.createBufferSource();
+    source.buffer = item.buffer;
+    source.connect(audioContext.destination);
+    const startAt = Math.max(audioContext.currentTime + 0.05, nextPlaybackTime);
+    nextPlaybackTime = startAt + item.buffer.duration;
+    scheduledSources.add(source);
+    source.onended = () => {
+      scheduledSources.delete(source);
+      if (run !== ttsRun) return;
+      playedSentences += 1;
+      if (scheduledSources.size === 0) {
+        $('stop-speech').disabled = true;
+        if (streamFinished) {
+          setStatus($('tts-status'), `播放完成，共 ${playedSentences} 句。`);
+        } else {
+          setStatus($('tts-status'), `已播放 ${playedSentences} 句，等待下一句生成…`);
+        }
+      } else {
+        setStatus($('tts-status'), `正在播放第 ${playedSentences + 1} 句…`);
+      }
+    };
+    source.start(startAt);
+  }
+  function appendSentence(event) {
+    const row = document.createElement('div');
+    row.textContent = `第 ${event.index + 1} 句 · ${event.inference_ms} ms · ${event.text}`;
+    $('stream-result').appendChild(row);
   }
   $('record').onclick = async () => {
     try {
@@ -126,8 +188,112 @@
   $('synthesize').onclick = async () => {
     const input = $('tts-text').value.trim();
     if (!input) { setStatus($('tts-status'), '请输入合成文本。', true); return; }
+    const run = ++ttsRun;
+    stopStreamAudio(true);
+    streamedBuffers = [];
+    playedSentences = 0;
+    streamFinished = false;
+    $('stream-result').replaceChildren();
+    $('stream-result').hidden = false;
+    $('replay-speech').disabled = true;
     $('synthesize').disabled = true;
-    setStatus($('tts-status'), '正在生成音频…');
+    $('synthesize-whole').disabled = true;
+    $('stop-speech').disabled = false;
+    setStatus($('tts-status'), '正在生成第一句…');
+    try {
+      await ensureAudioContext();
+      ttsAbortController = new AbortController();
+      const response = await fetch('/api/speech/stream', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({input, voice: $('voice').value, language: 'Chinese', instruct: $('instruct').value.trim()}),
+        signal: ttsAbortController.signal
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      if (!response.body) throw new Error('浏览器不支持流式响应。');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let pending = '';
+      let doneReceived = false;
+      const handleLine = async (line) => {
+        if (!line.trim() || run !== ttsRun) return;
+        const event = JSON.parse(line);
+        if (event.type === 'start') {
+          setStatus($('tts-status'), `共 ${event.sentence_count} 句，正在生成第一句…`);
+        } else if (event.type === 'audio') {
+          const buffer = await audioContext.decodeAudioData(base64ToArrayBuffer(event.audio_base64));
+          if (run !== ttsRun) return;
+          const item = {buffer, index: event.index, text: event.text};
+          streamedBuffers.push(item);
+          appendSentence(event);
+          scheduleBuffer(item, run);
+          $('replay-speech').disabled = false;
+          setStatus($('tts-status'), `第 ${event.index + 1} 句已生成，正在继续生成…`);
+        } else if (event.type === 'error') {
+          throw new Error(event.error?.message || '语音生成失败。');
+        } else if (event.type === 'done') {
+          doneReceived = true;
+          streamFinished = true;
+          if (scheduledSources.size === 0) {
+            $('stop-speech').disabled = true;
+            setStatus($('tts-status'), `生成及播放完成，共 ${event.sentence_count} 句。`);
+          } else {
+            setStatus($('tts-status'), `全部 ${event.sentence_count} 句已生成，正在播放…`);
+          }
+        }
+      };
+
+      while (true) {
+        const {value, done} = await reader.read();
+        pending += decoder.decode(value || new Uint8Array(), {stream: !done});
+        let newline;
+        while ((newline = pending.indexOf('\n')) >= 0) {
+          const line = pending.slice(0, newline);
+          pending = pending.slice(newline + 1);
+          await handleLine(line);
+        }
+        if (done) break;
+      }
+      if (pending.trim()) await handleLine(pending);
+      if (run === ttsRun && !doneReceived) throw new Error('语音流提前结束。');
+    } catch (error) {
+      if (run === ttsRun && error.name !== 'AbortError') setStatus($('tts-status'), error.message, true);
+    } finally {
+      if (run === ttsRun) {
+        ttsAbortController = null;
+        $('synthesize').disabled = false;
+        $('synthesize-whole').disabled = false;
+        if (scheduledSources.size === 0) $('stop-speech').disabled = true;
+      }
+    }
+  };
+  $('stop-speech').onclick = () => {
+    ttsRun += 1;
+    stopStreamAudio(true);
+    setStatus($('tts-status'), '已停止生成和播放。');
+    $('synthesize').disabled = false;
+    $('synthesize-whole').disabled = false;
+  };
+  $('replay-speech').onclick = async () => {
+    if (!streamedBuffers.length) return;
+    await ensureAudioContext();
+    ttsRun += 1;
+    stopStreamAudio(false);
+    const run = ttsRun;
+    playedSentences = 0;
+    streamFinished = true;
+    $('stop-speech').disabled = false;
+    streamedBuffers.forEach((item) => scheduleBuffer(item, run));
+    setStatus($('tts-status'), `正在重播 ${streamedBuffers.length} 句…`);
+  };
+  $('synthesize-whole').onclick = async () => {
+    const input = $('tts-text').value.trim();
+    if (!input) { setStatus($('tts-status'), '请输入合成文本。', true); return; }
+    ttsRun += 1;
+    stopStreamAudio(true);
+    $('synthesize').disabled = true;
+    $('synthesize-whole').disabled = true;
+    setStatus($('tts-status'), '正在生成整段 WAV…');
     try {
       const response = await fetch('/api/speech', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -139,10 +305,10 @@
       speechUrl = URL.createObjectURL(blob);
       $('speech').src = speechUrl; $('speech').hidden = false;
       $('download').href = speechUrl; $('download').hidden = false;
-      setStatus($('tts-status'), '生成完成。');
+      setStatus($('tts-status'), '整段 WAV 生成完成。');
       await $('speech').play().catch(() => {});
     } catch (error) { setStatus($('tts-status'), error.message, true); }
-    finally { $('synthesize').disabled = false; }
+    finally { $('synthesize').disabled = false; $('synthesize-whole').disabled = false; }
   };
 </script>
 </body>
