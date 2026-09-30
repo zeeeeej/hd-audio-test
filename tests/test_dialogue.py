@@ -124,6 +124,33 @@ def test_full_dialogue_and_followup(configured, monkeypatch):
     assert len(json.loads(calls[7].content)["messages"]) == 2
 
 
+def test_catalog_and_hotwords_are_snapshotted_for_each_session(configured, monkeypatch):
+    from test_catalog import multipart_words
+
+    calls = upstream(monkeypatch)
+    old = create(configured)
+    response = configured.patch("/api/retail/products/sparkling", json={
+        "stock": 2, "price_yuan": "4", "aliases": ["森林水"],
+    })
+    assert response.status_code == 200
+    response = configured.post("/api/retail/products", json={
+        "name": "新饮料", "stock": 3, "price_yuan": "7", "aliases": ["新品简称"],
+    })
+    assert response.status_code == 201
+    monkeypatch.setenv("DEFAULT_HOTWORDS", '["新默认词"]')
+    new = create(configured)
+    turn(configured, old)
+    turn(configured, new)
+    old_words, new_words = multipart_words(calls[0]), multipart_words(calls[3])
+    assert not {"森林水", "新饮料", "新品简称", "新默认词"} & set(old_words)
+    assert {"森林水", "新饮料", "新品简称", "新默认词"} <= set(new_words)
+    old_prompt = json.loads(calls[1].content)["messages"][0]["content"]
+    new_prompt = json.loads(calls[4].content)["messages"][0]["content"]
+    assert '"price_yuan":"5.00","stock":6' in old_prompt
+    assert '"price_yuan":"4.00","stock":2' in new_prompt
+    assert "新饮料" not in old_prompt and "新饮料" in new_prompt
+
+
 @pytest.mark.parametrize("failure,code,counted", [
     ("asr", "asr_failed", False), ("timeout", "deepseek_timeout", False),
     ("limit", "deepseek_busy", False), ("invalid_model", "deepseek_invalid_response", False),

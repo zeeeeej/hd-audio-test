@@ -85,6 +85,10 @@ def test_default_hotwords_merge_without_duplicates(monkeypatch) -> None:
     assert business._combined_hotwords(json.dumps(["冰露", "元气森林"])) == [
         "东方树叶",
         "冰露",
+        "冰露饮用水",
+        "东方树叶茉莉花茶",
+        "元气森林白桃味气泡水",
+        "可口可乐",
         "元气森林",
     ]
 

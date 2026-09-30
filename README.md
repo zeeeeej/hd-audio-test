@@ -103,11 +103,42 @@ export VOICE_BASE_URL=http://127.0.0.1:18000
 达到轮次上限或告别时仍播完本轮回答，然后要求重新开始。页面结束会话时取消业务侧等待和后续调用；
 已经在模型 worker 内启动的 GPU 推理可能继续到当前句结束。
 
-演示资料位于 `src/business/retail_catalog.json`，可用 `RETAIL_CATALOG_FILE` 指向其他本地 JSON。
-每个商品包含 `id`、`name`、`size`、两位小数字符串 `price_yuan`、非负整数 `stock` 和 `tags`；
-顶层包含 `mode: "demo"`、`notice`、`products` 和 `shopping_rules`。商品名与 `DEFAULT_HOTWORDS`
-合并去重后传给 ASR。会话开始时固定资料快照，修改配置后新会话生效。真实业务可替换 `CatalogProvider`，
-不能把现有演示价格和库存直接当作实时业务数据。
+### 饮料陈列与维护
+
+网页的“饮料陈列”显示商品名称、规格、剩余库存和每瓶售价，库存为零时标注缺货。
+点击“新增饮料”或商品上的“编辑”，可维护名称、规格、库存、单价、标签和可选简称热词。
+例如库存填 `2`、单价填 `4`，表示“剩余 2 瓶，4.00 元/瓶”，不是两瓶总价。
+名称、库存和单价必填；规格、标签和简称可不填。相同名称及规格不能重复新增。
+本模拟页没有登录，所有访问者共用服务器商品资料；不支持删除、下单或自动扣减库存。
+
+商品全名自动加入热词，可补充“元气森林”等简称，无需另外维护热词文件。
+默认热词、全名、简称合并去重后用于导购；独立 ASR 在此基础上再合并手动输入的热词。
+保存后列表立即更新，独立 ASR 下一次请求生效；已有导购会话继续使用固定的商品、提示词和
+热词快照，结束并开始新会话后使用新资料。保存时检查热词限制和现有上下文预算，超限则
+拒绝保存并保留原资料。默认最多 100 个去重热词、单词最多 40 字，商品最多 100 项；
+实际可添加数量还受上下文预算限制。
+
+初始演示资料位于 `src/business/retail_catalog.json`。未设置 `RETAIL_CATALOG_FILE` 时，
+首次读取会复制到已被 Git 忽略的 `runtime/retail_catalog.json`，此后只读写运行时文件，
+刷新网页或重启服务不会重置商品。运行时文件损坏时报告错误，不自动覆盖。
+设置 `RETAIL_CATALOG_FILE` 后直接读写指定的已有 JSON 文件，其父目录必须可写。
+服务器发布时应使用发布目录外的持久化配置文件，例如 `/data/voice-stack/config/retail_catalog.json`，
+首次配置复制已有目录，后续发布保留该文件。保持业务服务 `--workers 1`。
+
+每个商品包含 `id`、`name`、`size`、两位小数字符串 `price_yuan`、非负整数 `stock`、`tags`
+和 `aliases`；旧资料缺少 `aliases` 时默认为空数组。顶层仍为 `mode: "demo"`、`notice`、
+`products` 和 `shopping_rules`。真实业务可替换 `CatalogProvider`，现有资料仅用于演示。
+
+| 方法与路径 | 作用 |
+| --- | --- |
+| `GET /api/retail/catalog` | 获取完整演示商品目录 |
+| `POST /api/retail/products` | 新增商品，返回商品对象及服务器生成的 ID，状态码 201 |
+| `PATCH /api/retail/products/{id}` | 修改提交的商品字段，保留其他字段，返回更新后的商品对象 |
+
+新增示例：`{"name":"测试饮料","stock":2,"price_yuan":"4.00","aliases":["测试简称"]}`。
+修改示例：`{"stock":0,"price_yuan":"3.50"}`。不能修改 ID，不能传空补丁或 null 字段。
+字段或容量超限返回 422，重复商品返回 409，商品不存在返回 404，读取或保存失败返回 503；
+错误沿用 `{error: {code, message, request_id}}` 结构。保存采用进程内锁与同目录原子替换。
 
 ### 导购 API
 
@@ -230,6 +261,13 @@ ssh -p 21112 -N -L 28743:127.0.0.1:8443 root@106.14.11.151
 后续“第二种多少钱？”正确返回“演示价五元。”。
 规则与验证记录见 [多商品分句验证](docs/SEMANTIC_FIRST_SENTENCE_EVALUATION.json)。
 
+同日已发布饮料陈列、新增编辑及商品热词同步。商品资料已独立存放到
+`/data/voice-stack/config/retail_catalog.json`，保留原有 4 款商品及价格库存；
+备份与回滚脚本位于 `/data/voice-stack/backups/catalog-deploy-20260930-150432/`。
+仅重启业务服务，商品读取、原值保存、持久化文件、页面表单与导购会话检查通过。
+真实语音“东方树叶多少钱？”返回“演示价六元。”，单次首段音频耗时 5.84 秒；
+四个服务均正常运行。回滚恢复旧代码和环境配置，并保留独立商品文件。
+
 部署根目录为 `/data/voice-stack`。`deploy/voice.env.example` 是环境变量模板，`deploy/systemd` 包含四个服务和总 target。证书通过以下命令生成：
 
 ```bash
@@ -237,3 +275,12 @@ bash deploy/create_self_signed_cert.sh /data/voice-stack/config/tls 106.14.11.15
 ```
 
 模型、环境、证书、token、数据和 checkpoint 均不提交到仓库。服务器只需在阿里云安全组放行 TCP 8443；18000–18002 不应对公网开放。
+
+### 商品维护回归验证
+
+运行 `.venv/bin/pytest` 和 `.venv/bin/ruff check .`。测试通过独立临时目录隔离商品文件，
+覆盖持久化、并发新增、写入失败、校验限制、两个 ASR 入口热词及新旧会话快照。
+浏览器验证使用 `tests/browser_catalog.cjs`，运行方式与 `tests/browser_dialogue.cjs` 相同
+（`NODE_PATH` 指向 playwright-core，`APP_URL` 指向本地业务服务）。
+商品浏览器测试会新增和编辑商品，必须将测试服务的 `RETAIL_CATALOG_FILE` 指向独立演示副本，
+不要对共用商品目录或服务器生产实例运行。

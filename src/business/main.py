@@ -14,7 +14,9 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.background import BackgroundTask
 
+from src.business.catalog_api import router as catalog_router
 from src.business.dialogue import router as dialogue_router
+from src.business.retail import CatalogProvider, DialogueError, catalog_hotwords
 from src.common import (
     CHINESE_VOICES,
     MAX_TTS_CHARS,
@@ -36,6 +38,7 @@ logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 app = FastAPI(title="HD Voice Business Demo", version="0.1.0")
 app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.include_router(dialogue_router)
+app.include_router(catalog_router)
 
 
 class SpeechRequest(BaseModel):
@@ -55,8 +58,8 @@ def _auth_headers(req_id: str) -> dict[str, str]:
 
 
 def _combined_hotwords(raw: str) -> list[str]:
-    defaults = parse_hotwords(DEFAULT_HOTWORDS_RAW)
     requested = parse_hotwords(raw)
+    defaults = catalog_hotwords(CatalogProvider().load(), DEFAULT_HOTWORDS_RAW)
     return parse_hotwords(defaults + requested)
 
 
@@ -68,6 +71,11 @@ async def index() -> FileResponse:
 @app.get("/dialogue.js", include_in_schema=False)
 async def dialogue_script() -> FileResponse:
     return FileResponse(STATIC_DIR / "dialogue.js", media_type="application/javascript")
+
+
+@app.get("/catalog.js", include_in_schema=False)
+async def catalog_script() -> FileResponse:
+    return FileResponse(STATIC_DIR / "catalog.js", media_type="application/javascript")
 
 
 @app.get("/api/voices")
@@ -116,6 +124,8 @@ async def transcriptions(
         merged_hotwords = _combined_hotwords(hotwords)
     except ValueError as exc:
         return error_response(422, "invalid_hotwords", str(exc), req_id)
+    except DialogueError as exc:
+        return error_response(exc.status, exc.code, exc.message, req_id)
 
     try:
         async with httpx.AsyncClient(timeout=VOICE_TIMEOUT_SECONDS) as client:

@@ -15,7 +15,7 @@
     section { background: white; border: 1px solid #dfe5ef; border-radius: 16px; padding: 22px; box-shadow: 0 8px 24px #1f35500d; }
     h2 { margin-top: 0; font-size: 20px; }
     label { display: block; margin: 14px 0 7px; font-size: 14px; font-weight: 650; }
-    textarea, select { width: 100%; border: 1px solid #cbd4e1; border-radius: 10px; padding: 11px; font: inherit; background: white; }
+    input, textarea, select { width: 100%; border: 1px solid #cbd4e1; border-radius: 10px; padding: 11px; font: inherit; background: white; }
     textarea { min-height: 106px; resize: vertical; }
     button { border: 0; border-radius: 10px; padding: 11px 16px; font: inherit; font-weight: 700; cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: .5; }
@@ -34,6 +34,17 @@
     .dialogue-log .customer { background: #edf7ed; }
     details > summary { cursor: pointer; margin: 20px 0; font-weight: 650; }
     [inert] { opacity: .55; }
+    .catalog { margin-bottom: 24px; }
+    .catalog-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .product-card { padding: 14px; border: 1px solid #dfe5ef; border-radius: 10px; }
+    .product-card h3 { margin: 0 0 8px; font-size: 17px; overflow-wrap: anywhere; }
+    .product-card p { margin: 8px 0; }
+    .product-card .sold-out { color: #c62f35; }
+    #catalog-fields { border: 0; padding: 0; margin: 0; min-width: 0; }
+    #catalog-form { margin-top: 18px; }
+    #catalog-form .grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+    #catalog-form input { min-width: 0; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
@@ -58,6 +69,36 @@
     <p><small id="dialogue-turn">尚未开始</small></p>
     <div id="dialogue-log" class="dialogue-log" role="log" aria-live="polite"></div>
     <details><summary>本轮诊断</summary><small id="dialogue-metrics">尚无请求。</small></details>
+  </section>
+  <section class="catalog" aria-labelledby="catalog-title">
+    <h2 id="catalog-title">饮料陈列 · 演示数据</h2>
+    <small>价格为每瓶单价，数量为剩余库存。所有访问者共用商品资料。</small>
+    <div class="actions">
+      <button class="primary" id="catalog-add" disabled>新增饮料</button>
+      <button class="secondary" id="catalog-refresh">刷新列表</button>
+    </div>
+    <p class="status" id="catalog-status" role="status" aria-live="polite">正在加载商品…</p>
+    <div class="catalog-list" id="catalog-list"></div>
+    <form id="catalog-form" hidden>
+      <h3 id="catalog-form-title">新增饮料</h3>
+      <fieldset id="catalog-fields">
+        <div class="grid">
+          <div><label for="catalog-name">饮料名称 *</label><input id="catalog-name" required maxlength="40"></div>
+          <div><label for="catalog-size">规格</label><input id="catalog-size" maxlength="40" placeholder="例如：480毫升"></div>
+          <div><label for="catalog-stock">剩余库存（瓶）*</label><input id="catalog-stock" type="number" min="0" step="1" required></div>
+          <div><label for="catalog-price">每瓶售价（元）*</label><input id="catalog-price" type="number" min="0" max="999999999.99" step="0.01" required></div>
+        </div>
+        <label for="catalog-tags">标签（逗号或换行分隔）</label>
+        <input id="catalog-tags" placeholder="例如：无糖，气泡，白桃味">
+        <label for="catalog-aliases">简称热词（可选，逗号或换行分隔）</label>
+        <textarea id="catalog-aliases" placeholder="例如：元气森林"></textarea>
+        <small>商品全名自动加入导购和独立语音识别热词，无需重复填写。保存后新会话生效。</small>
+        <div class="actions">
+          <button class="primary" type="submit">保存饮料</button>
+          <button class="secondary" type="button" id="catalog-cancel">取消</button>
+        </div>
+      </fieldset>
+    </form>
   </section>
   <details id="voice-debug">
   <summary>Voice 服务测试 · 独立 ASR / TTS 调试</summary>
@@ -340,5 +381,6 @@
   };
 </script>
 <script src="/dialogue.js" defer></script>
+<script src="/catalog.js" defer></script>
 </body>
 </html>

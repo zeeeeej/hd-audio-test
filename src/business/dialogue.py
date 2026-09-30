@@ -20,6 +20,7 @@ from src.business.retail import (
     SessionStore,
     ask_deepseek,
     bounded_reply,
+    catalog_hotwords,
     deepseek_key,
     messages_for,
     system_prompt,
@@ -30,7 +31,6 @@ from src.common import (
     MAX_UPLOAD_BYTES,
     error_response,
     is_allowed_audio_type,
-    parse_hotwords,
     request_id,
 )
 
@@ -80,16 +80,10 @@ async def create_session() -> Response:
     try:
         deepseek_key()
         catalog = catalog_provider.load()
-        try:
-            parse_hotwords([
-                *parse_hotwords(os.getenv("DEFAULT_HOTWORDS", "[]")),
-                *(product.name for product in catalog.products),
-            ])
-        except ValueError as exc:
-            raise DialogueError("hotwords_config_invalid", "商品热词配置有误。", 503) from exc
+        words = catalog_hotwords(catalog)
         prompt = system_prompt(catalog, settings)
         messages_for(prompt, [], "", settings)  # Validate static budget before recording.
-        session = Session(id=request_id(), catalog=catalog, prompt=prompt)
+        session = Session(id=request_id(), catalog=catalog, prompt=prompt, hotwords=words)
         store.add(session)
         return Response(
             json.dumps({
@@ -141,10 +135,7 @@ async def turn_events(
                 return
             async with make_client() as client:
                 yield event_line("stage", req_id, stage=stage)
-                words = parse_hotwords([
-                    *parse_hotwords(os.getenv("DEFAULT_HOTWORDS", "[]")),
-                    *(product.name for product in session.catalog.products),
-                ])
+                words = session.hotwords
                 async with asyncio.timeout(VOICE_TIMEOUT):
                     response = await client.post(
                         f"{VOICE_BASE_URL}/v1/audio/transcriptions",

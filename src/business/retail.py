@@ -5,13 +5,19 @@ import logging
 import os
 import re
 import time
+import tempfile
+import threading
+import uuid
+from decimal import Decimal
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 import anyio
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from src.common import parse_hotwords
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -101,14 +107,31 @@ def deepseek_key() -> str:
     return key
 
 
-class Product(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1)
+class ProductFields(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1, max_length=40)
-    size: str
-    price_yuan: str = Field(pattern=r"^\d+\.\d{2}$")
-    stock: int = Field(ge=0)
-    tags: list[str]
+    size: str = Field(default="", max_length=40)
+    price_yuan: str
+    stock: int = Field(ge=0, strict=True)
+    tags: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+
+    @field_validator("price_yuan", mode="before")
+    @classmethod
+    def price(cls, value):
+        raw = str(value).strip()
+        if not re.fullmatch(r"\d{1,9}(?:\.\d{1,2})?", raw):
+            raise ValueError("单价须为非负金额，最多两位小数")
+        return format(Decimal(raw), ".2f")
+
+    @field_validator("tags", "aliases")
+    @classmethod
+    def words(cls, value):
+        return parse_hotwords(value)
+
+
+class Product(ProductFields):
+    id: str = Field(min_length=1)
 
 
 class Catalog(BaseModel):
@@ -119,17 +142,84 @@ class Catalog(BaseModel):
     shopping_rules: list[str]
 
 
+def catalog_hotwords(catalog: Catalog, defaults: str | None = None) -> list[str]:
+    try:
+        return parse_hotwords([
+            *parse_hotwords(os.getenv("DEFAULT_HOTWORDS", "[]") if defaults is None else defaults),
+            *(word for product in catalog.products for word in [product.name, *product.aliases]),
+        ])
+    except ValueError as exc:
+        raise DialogueError("hotwords_config_invalid", "商品热词配置有误或超过数量限制。", 503) from exc
+
+
 class CatalogProvider:
-    """Local demo source; a future business adapter can implement load()."""
+    """Persistent demo source; shared lock for the single-process business service."""
+
+    _lock = threading.RLock()
+
+    def path(self) -> Path:
+        return Path(os.getenv("RETAIL_CATALOG_FILE", str(
+            PROJECT_ROOT / "runtime" / "retail_catalog.json"
+        ))).expanduser()
 
     def load(self) -> Catalog:
-        path = Path(os.getenv("RETAIL_CATALOG_FILE", str(Path(__file__).with_name(
-            "retail_catalog.json"
-        ))))
+        with self._lock:
+            path = self.path()
+            try:
+                if not path.exists() and not os.getenv("RETAIL_CATALOG_FILE"):
+                    catalog = Catalog.model_validate_json(
+                        Path(__file__).with_name("retail_catalog.json").read_text()
+                    )
+                    self._write(path, catalog)
+                    return catalog
+                return Catalog.model_validate_json(path.read_text())
+            except (OSError, ValueError) as exc:
+                raise DialogueError("catalog_invalid", "演示商品资料配置有误。", 503) from exc
+
+    def _write(self, path: Path, catalog: Catalog) -> None:
+        temporary = None
         try:
-            return Catalog.model_validate_json(path.read_text())
-        except (OSError, ValueError) as exc:
-            raise DialogueError("catalog_invalid", "演示商品资料配置有误。", 503) from exc
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=path.parent, prefix=".catalog-", delete=False,
+            ) as output:
+                temporary = Path(output.name)
+                output.write(catalog.model_dump_json(indent=2) + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, path)
+        except OSError as exc:
+            raise DialogueError("catalog_save_failed", "商品资料保存失败，请稍后重试。", 503) from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+    def save_product(self, values: dict, product_id: str | None = None) -> Product:
+        with self._lock:
+            catalog = self.load()
+            if product_id is None:
+                product = Product(id=uuid.uuid4().hex, **values)
+                catalog.products.append(product)
+            else:
+                index = next((i for i, p in enumerate(catalog.products) if p.id == product_id), None)
+                if index is None:
+                    raise DialogueError("product_not_found", "商品不存在，请刷新列表。", 404)
+                product = Product.model_validate({
+                    **catalog.products[index].model_dump(), **values, "id": product_id,
+                })
+                catalog.products[index] = product
+            keys = [(p.name.casefold(), p.size.casefold()) for p in catalog.products]
+            if len(set(keys)) != len(keys):
+                raise DialogueError("product_exists", "相同名称和规格的饮料已存在，请编辑已有商品。", 409)
+            catalog = Catalog.model_validate(catalog.model_dump())
+            try:
+                catalog_hotwords(catalog)
+                settings = DialogueSettings()
+                messages_for(system_prompt(catalog, settings), [], "", settings)
+            except DialogueError as exc:
+                raise DialogueError(exc.code, exc.message, 422) from exc
+            self._write(self.path(), catalog)
+            return product
 
 
 class ModelAnswer(BaseModel):
@@ -273,6 +363,7 @@ class Session:
     id: str
     catalog: Catalog
     prompt: str
+    hotwords: list[str] = field(default_factory=list)
     history: list[tuple[str, str]] = field(default_factory=list)
     turns: int = 0
     touched: float = field(default_factory=time.monotonic)
